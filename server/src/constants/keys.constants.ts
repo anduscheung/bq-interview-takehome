@@ -40,3 +40,5 @@ fZGMjVJWN1yB0eabUdB7wmwKtsIYno4VM05kTxzB5d2kDhkkdvb5v8XOOZ3BTon1
 EwIDAQAB
 -----END PUBLIC KEY-----
 `;
+
+export const SALT_LENGTH = 32;

@@ -1,117 +1,130 @@
-import React, { useEffect, useState } from "react";
-import CryptoJS from "crypto-js";
+import React, { useEffect, useState, useRef } from "react";
 import {
-  importServerPublicKey,
-  importClientPrivateKey,
-  signData,
-  encryptAESKey,
-} from "./helpers.ts"; // Keep Web Crypto helpers for RSA
-import { CLIENT_PRIVATE_KEY, SERVER_PUBLIC_KEY } from "./keys.constants.ts";
+  encryptData,
+  loadKeysAndGenerateAES,
+  decryptAndVerifyData,
+} from "./utils/crypto.utils.ts";
 
 const API_URL = "http://localhost:8080";
 
 function App() {
   const [data, setData] = useState<string>("");
-  const [aesKey, setAESKey] = useState<string | null>(null); // AES key as a simple string
-  const [serverPublicKey, setServerPublicKey] = useState<CryptoKey | null>(
-    null
-  );
-  const [clientPrivateKey, setClientPrivateKey] = useState<CryptoKey | null>(
-    null
-  );
+
+  const aesKeyRef = useRef<string | null>(null);
+  const serverPublicKeyForEncryptRef = useRef<CryptoKey | null>(null);
+  const serverPublicKeyForVerifyRef = useRef<CryptoKey | null>(null);
+  const clientPrivateKeyForSigningRef = useRef<CryptoKey | null>(null);
+  const clientPrivateKeyForDecryptRef = useRef<CryptoKey | null>(null);
 
   useEffect(() => {
     async function loadKeys() {
       try {
-        // Import RSA keys
-        const serverPublicKey = await importServerPublicKey(SERVER_PUBLIC_KEY);
-        const clientPrivateKey = await importClientPrivateKey(
-          CLIENT_PRIVATE_KEY
-        );
+        const {
+          serverPublicKeyForEncrypt,
+          serverPublicKeyForVerify,
+          clientPrivateKeyForSigning,
+          clientPrivateKeyForDecrypt,
+          aesKey,
+        } = await loadKeysAndGenerateAES();
 
-        // Generate a random 32-character AES key (256 bits)
-        const aesKey = CryptoJS.lib.WordArray.random(32).toString(
-          CryptoJS.enc.Hex
-        );
-
-        setServerPublicKey(serverPublicKey);
-        setClientPrivateKey(clientPrivateKey);
-        setAESKey(aesKey);
-
-        console.log("AES Key (Hex):", aesKey);
+        serverPublicKeyForEncryptRef.current = serverPublicKeyForEncrypt;
+        clientPrivateKeyForSigningRef.current = clientPrivateKeyForSigning;
+        clientPrivateKeyForDecryptRef.current = clientPrivateKeyForDecrypt;
+        serverPublicKeyForVerifyRef.current = serverPublicKeyForVerify;
+        aesKeyRef.current = aesKey;
       } catch (error) {
         console.error("Error loading keys:", error);
       }
     }
+
     loadKeys();
   }, []);
 
-  const encryptPayloadWithAES = (plaintext: string, key: string) => {
-    // Generate a random 16-byte IV
-    const iv = CryptoJS.lib.WordArray.random(16);
-
-    // Encrypt the data
-    const ciphertext = CryptoJS.AES.encrypt(
-      plaintext,
-      CryptoJS.enc.Hex.parse(key),
-      {
-        iv: iv,
-        mode: CryptoJS.mode.CBC, // Using AES-CBC mode
-        padding: CryptoJS.pad.Pkcs7, // Standard padding
-      }
-    );
-
-    return {
-      encryptedData: ciphertext.toString(), // Base64 ciphertext
-      iv: iv.toString(CryptoJS.enc.Base64), // Base64 IV for transmission
-    };
-  };
-
   const sendData = async () => {
-    if (!aesKey || !serverPublicKey || !clientPrivateKey) {
-      console.error("Keys not loaded");
+    if (
+      !aesKeyRef.current ||
+      !serverPublicKeyForEncryptRef.current ||
+      !clientPrivateKeyForSigningRef.current
+    ) {
+      alert("Keys are not loaded, try again after 1 second");
       return;
     }
 
     try {
-      // Step 1: Encrypt the data with AES
-      const { encryptedData, iv } = encryptPayloadWithAES(data, aesKey);
-
-      // Step 2: Encrypt the AES key with the server's RSA public key
-      const encryptedAESKey = await encryptAESKey(
-        aesKey, // Pass the AES key directly as a string
-        serverPublicKey
+      const preparedData = await encryptData(
+        data,
+        aesKeyRef.current,
+        serverPublicKeyForEncryptRef.current,
+        clientPrivateKeyForSigningRef.current
       );
 
-      // Step 3: Sign the original data with the client's private key
-      const signature = await signData(
-        new TextEncoder().encode(data),
-        clientPrivateKey
-      );
-
-      console.log(">>> before send <<<");
-      console.log("Encrypted Data:", encryptedData);
-      console.log("IV:", iv);
-      console.log("Encrypted AES Key:", encryptedAESKey);
-      console.log("Signature:", signature);
-
-      // Step 4: Send data to the server
       await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          encryptedData,
-          encryptedAESKey,
-          iv,
-          signature,
-        }),
+        body: JSON.stringify(preparedData),
       });
-
-      console.log("Data sent successfully!");
+      alert("Data sent successfully!");
     } catch (error) {
       console.error("Error sending data:", error);
+    }
+  };
+
+  const fetchAndVerifyData = async () => {
+    try {
+      if (
+        !serverPublicKeyForVerifyRef.current ||
+        !clientPrivateKeyForDecryptRef.current
+      ) {
+        alert("Keys are not loaded, try again after 1 second");
+        return;
+      }
+
+      const response = await fetch(API_URL);
+
+      if (response.status === 404) {
+        alert("No data found");
+        return;
+      }
+
+      if (response.status === 400) {
+        alert(
+          "Data may have been tampered with and no previous data available as fallback"
+        );
+        return;
+      }
+
+      if (!response.ok) {
+        alert("Data is corrupted or tempered, please contact support");
+        return;
+      }
+
+      const {
+        fallbackUsed,
+        data: { encryptedData, encryptedAESKey, iv, signature },
+      } = await response.json();
+
+      const decryptedPayload = await decryptAndVerifyData(
+        encryptedData,
+        encryptedAESKey,
+        iv,
+        signature,
+        clientPrivateKeyForDecryptRef.current,
+        serverPublicKeyForVerifyRef.current
+      );
+
+      setData(decryptedPayload);
+
+      if (fallbackUsed) {
+        alert(
+          `The latest data may have been tampered with. Previous version was used as fallback. Data = ${decryptedPayload}`
+        );
+      } else {
+        alert(`Data is verified, data = ${decryptedPayload}`);
+      }
+    } catch (error) {
+      alert("Data is corrupted or tempered, please contact support");
     }
   };
 
@@ -134,13 +147,20 @@ function App() {
         placeholder="Enter data"
         style={{ width: "300px", height: "100px", fontSize: "16px" }}
       ></textarea>
-      <button
-        onClick={sendData}
-        style={{ padding: "10px 20px", fontSize: "16px" }}
-        disabled={!aesKey || !serverPublicKey || !clientPrivateKey}
-      >
-        Send Data
-      </button>
+      <div style={{ display: "flex", gap: "10px" }}>
+        <button
+          onClick={sendData}
+          style={{ padding: "10px 20px", fontSize: "16px" }}
+        >
+          Send Data
+        </button>
+        <button
+          style={{ padding: "10px 20px", fontSize: "16px" }}
+          onClick={fetchAndVerifyData}
+        >
+          Verify Data
+        </button>
+      </div>
     </div>
   );
 }

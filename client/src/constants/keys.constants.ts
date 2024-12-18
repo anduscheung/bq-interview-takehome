@@ -40,3 +40,5 @@ qil/q5FCmF3WdCbw7VdM4nEkFj5MOpiHzpS5y/6sK0mVWaZ0Sb3xy6oq26x6WklY
 6QIDAQAB
 -----END PUBLIC KEY-----
 `;
+
+export const SALT_LENGTH = 32;

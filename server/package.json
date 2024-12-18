@@ -5,22 +5,22 @@
   "main": "app.ts",
   "scripts": {
     "start": "ts-node src/app.ts",
-    "dev": "nodemon"
+    "dev": "nodemon",
+    "create-db": "node ./src/database/createDb.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@types/crypto-js": "^4.2.2",
     "@types/node-forge": "^1.3.11",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
     "csv-parser": "^3.0.0",
     "express": "^4.18.2",
     "fast-csv": "^5.0.2",
-    "hybrid-crypto-js": "^0.2.4",
-    "node-forge": "^1.3.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3",
-    "winston": "^3.17.0"
+    "typescript": "^5.3.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

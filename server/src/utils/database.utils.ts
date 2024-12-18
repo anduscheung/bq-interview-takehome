@@ -6,10 +6,17 @@ import path from "path";
 const databaseDir = path.join(__dirname, "../database");
 const databaseFile = path.join(databaseDir, "database.csv");
 
-export async function readDatabase(): Promise<any[]> {
+export interface dbRecord {
+  encryptedData: string;
+  encryptedAESKey: string;
+  iv: string;
+  signature: string;
+}
+
+export async function readDatabase(): Promise<dbRecord[]> {
   return new Promise((resolve, reject) => {
     const results: any[] = [];
-    fs.createReadStream(databaseFile) // Path to your CSV file
+    fs.createReadStream(databaseFile)
       .pipe(csvParser())
       .on("data", (row) => {
         results.push(row);
@@ -23,18 +30,19 @@ export async function readDatabase(): Promise<any[]> {
   });
 }
 
-export async function writeDatabase(record: any) {
-  const records = await readDatabase(); // Fetch existing records
-  records.push(record); // Add the new record
+export async function writeDatabase(record: dbRecord) {
+  const fileExists = fs.existsSync(databaseFile);
 
-  const writeStream = fs.createWriteStream(databaseFile);
-  const csvStream = format({ headers: true });
+  const writeStream = fs.createWriteStream(databaseFile, { flags: "a" });
+
+  const csvStream = format({
+    headers: !fileExists,
+    includeEndRowDelimiter: true,
+  });
 
   csvStream.pipe(writeStream);
 
-  records.forEach((row) => {
-    csvStream.write(row);
-  });
+  csvStream.write(record);
 
   csvStream.end();
 
