@@ -1,35 +1,131 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import {
+  encryptData,
+  loadKeysAndGenerateAES,
+  decryptAndVerifyData,
+} from "./utils/crypto.utils.ts";
 
 const API_URL = "http://localhost:8080";
 
 function App() {
-  const [data, setData] = useState<string>();
+  const [data, setData] = useState<string>("");
+
+  const aesKeyRef = useRef<string | null>(null);
+  const serverPublicKeyForEncryptRef = useRef<CryptoKey | null>(null);
+  const serverPublicKeyForVerifyRef = useRef<CryptoKey | null>(null);
+  const clientPrivateKeyForSigningRef = useRef<CryptoKey | null>(null);
+  const clientPrivateKeyForDecryptRef = useRef<CryptoKey | null>(null);
 
   useEffect(() => {
-    getData();
+    async function loadKeys() {
+      try {
+        const {
+          serverPublicKeyForEncrypt,
+          serverPublicKeyForVerify,
+          clientPrivateKeyForSigning,
+          clientPrivateKeyForDecrypt,
+          aesKey,
+        } = await loadKeysAndGenerateAES();
+
+        serverPublicKeyForEncryptRef.current = serverPublicKeyForEncrypt;
+        clientPrivateKeyForSigningRef.current = clientPrivateKeyForSigning;
+        clientPrivateKeyForDecryptRef.current = clientPrivateKeyForDecrypt;
+        serverPublicKeyForVerifyRef.current = serverPublicKeyForVerify;
+        aesKeyRef.current = aesKey;
+      } catch (error) {
+        console.error("Error loading keys:", error);
+      }
+    }
+
+    loadKeys();
   }, []);
 
-  const getData = async () => {
-    const response = await fetch(API_URL);
-    const { data } = await response.json();
-    setData(data);
+  const sendData = async () => {
+    if (
+      !aesKeyRef.current ||
+      !serverPublicKeyForEncryptRef.current ||
+      !clientPrivateKeyForSigningRef.current
+    ) {
+      alert("Keys are not loaded, try again after 1 second");
+      return;
+    }
+
+    try {
+      const preparedData = await encryptData(
+        data,
+        aesKeyRef.current,
+        serverPublicKeyForEncryptRef.current,
+        clientPrivateKeyForSigningRef.current
+      );
+
+      await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(preparedData),
+      });
+      alert("Data sent successfully!");
+    } catch (error) {
+      console.error("Error sending data:", error);
+    }
   };
 
-  const updateData = async () => {
-    await fetch(API_URL, {
-      method: "POST",
-      body: JSON.stringify({ data }),
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-    });
+  const fetchAndVerifyData = async () => {
+    try {
+      if (
+        !serverPublicKeyForVerifyRef.current ||
+        !clientPrivateKeyForDecryptRef.current
+      ) {
+        alert("Keys are not loaded, try again after 1 second");
+        return;
+      }
 
-    await getData();
-  };
+      const response = await fetch(API_URL);
 
-  const verifyData = async () => {
-    throw new Error("Not implemented");
+      if (response.status === 404) {
+        alert("No data found");
+        return;
+      }
+
+      if (response.status === 400) {
+        alert(
+          "Data may have been tampered with and no previous data available as fallback"
+        );
+        return;
+      }
+
+      if (!response.ok) {
+        alert("Data is corrupted or tempered, please contact support");
+        return;
+      }
+
+      const {
+        fallbackUsed,
+        data: { encryptedData, encryptedAESKey, iv, signature },
+      } = await response.json();
+
+      const decryptedPayload = await decryptAndVerifyData(
+        encryptedData,
+        encryptedAESKey,
+        iv,
+        signature,
+        clientPrivateKeyForDecryptRef.current,
+        serverPublicKeyForVerifyRef.current
+      );
+
+      setData(decryptedPayload);
+
+      if (fallbackUsed) {
+        alert(
+          `The latest data may have been tampered with. Previous version was used as fallback. Data = ${decryptedPayload}`
+        );
+      } else {
+        alert(`Data is verified, data = ${decryptedPayload}`);
+      }
+    } catch (error) {
+      alert("Data is corrupted or tempered, please contact support");
+    }
   };
 
   return (
@@ -38,28 +134,30 @@ function App() {
         width: "100vw",
         height: "100vh",
         display: "flex",
-        position: "absolute",
-        padding: 0,
-        justifyContent: "center",
-        alignItems: "center",
         flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
         gap: "20px",
-        fontSize: "30px",
+        fontSize: "20px",
       }}
     >
-      <div>Saved Data</div>
-      <input
-        style={{ fontSize: "30px" }}
-        type="text"
+      <textarea
         value={data}
         onChange={(e) => setData(e.target.value)}
-      />
-
+        placeholder="Enter data"
+        style={{ width: "300px", height: "100px", fontSize: "16px" }}
+      ></textarea>
       <div style={{ display: "flex", gap: "10px" }}>
-        <button style={{ fontSize: "20px" }} onClick={updateData}>
-          Update Data
+        <button
+          onClick={sendData}
+          style={{ padding: "10px 20px", fontSize: "16px" }}
+        >
+          Send Data
         </button>
-        <button style={{ fontSize: "20px" }} onClick={verifyData}>
+        <button
+          style={{ padding: "10px 20px", fontSize: "16px" }}
+          onClick={fetchAndVerifyData}
+        >
           Verify Data
         </button>
       </div>
