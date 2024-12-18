@@ -2,7 +2,7 @@
   "watch": ["*.ts"],
   "ext": "ts",
   "ignore": ["dist/*"],
-  "exec": "ts-node app.ts",
+  "exec": "ts-node src/app.ts",
   "restartable": "rs",
   "verbose": true
 }
