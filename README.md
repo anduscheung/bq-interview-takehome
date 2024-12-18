@@ -63,53 +63,57 @@ By implementing this fallback mechanism, the system ensures that even if data is
 
 ## Possible improvement
 
-1. I have put the RSA keys in a constant file for now, but ideally, in a production environment, the keys should be securely stored in a key management system (KMS) or environment variables to ensure that private keys are never exposed to unauthorized entities. In this setup, all clients share the server’s public key because it’s used for encrypting the AES key and verifying the server’s signature. This allows any client to securely communicate with the server.
+### 1. Key management
+
+I have put the RSA keys in a constant file for now, but ideally, in a production environment, the keys should be securely stored in a key management system (KMS) or environment variables to ensure that private keys are never exposed to unauthorized entities. In this setup, all clients share the server’s public key because it’s used for encrypting the AES key and verifying the server’s signature. This allows any client to securely communicate with the server.
 
 However, each client has its own private RSA key, which is unique and used for signing data and decrypting the AES key when receiving data. This ensures that private keys are only accessible to the respective clients and never shared.
 
 In production environments, private keys (for each client) are ideally generated securely on the website or locally and stored on the client’s machine, than the public keys are uploaded to the server.
 
-2. For AES encryption and decryption, I initially used the crypto-js library, which provided a convenient solution for both the client and server. However, it is important to note that the maintainer of this library has stated that they will no longer actively develop it. Ideally, I would prefer to use a more actively maintained solution. That said, I encountered difficulties when attempting to use the native Web Crypto API on the client side for AES decryption. After several attempts and due to time constraints, I resorted to using crypto-js, as it provided a working solution.
+### 2. Use of native library
+
+For AES encryption and decryption, I initially used the crypto-js library, which provided a convenient solution for both the client and server. However, it is important to note that the maintainer of this library has stated that they will no longer actively develop it. Ideally, I would prefer to use a more actively maintained solution. That said, I encountered difficulties when attempting to use the native Web Crypto API on the client side for AES decryption. After several attempts and due to time constraints, I resorted to using crypto-js, as it provided a working solution.
 
 ## The complete flow
 
-1. POST Request Flow (Client → Server)
+### 1. POST Request Flow (Client → Server)
 
-   Scenario: The client sends data to the server for secure storage.
+Scenario: The client sends data to the server for secure storage.
 
-   1.1 Client-Side:
+#### Client-Side:
 
-   - Generate AES Key: The client generates a random AES key (symmetric encryption key).
-   - Encrypt AES Key: The client encrypts the AES key using the server’s pre-shared RSA public key to create the encrypted AES key (encry_aes_key).
-   - Encrypt Data: The client encrypts the data (raw content) using the generated AES key via AES encryption to produce the ciphertext.
-   - Sign the Data: The client signs the raw data using the client’s private RSA key to create a digital signature, ensuring data integrity.
-   - Send Data: The client sends the encry_aes_key, ciphertext (encrypted data), IV, and signature to the server in the request.
+1. Generate AES Key: The client generates a random AES key (symmetric encryption key).
+2. Encrypt AES Key: The client encrypts the AES key using the server’s pre.shared RSA public key to create the encrypted AES key (encry_aes_key).
+3. Encrypt Data: The client encrypts the data (raw content) using the generated AES key via AES encryption to produce the ciphertext.
+4. Sign the Data: The client signs the raw data using the client’s private RSA key to create a digital signature, ensuring data integrity.
+5. Send Data: The client sends the encry_aes_key, ciphertext (encrypted data), IV, and signature to the server in the request.
 
-     1.2 Server-Side:
+#### Server.Side:
 
-   - Decrypt AES Key: The server uses its RSA private key to decrypt the encry_aes_key and retrieve the original AES key.
-   - Decrypt Data: The server uses the decrypted AES key to decrypt the ciphertext and retrieve the original data.
-   - Verify Signature: The server verifies the signature using the client’s public RSA key to ensure that the data has not been tampered with.
-   - Encrypt Data for Storage: The server may re-encrypt the data with its own AES key before storing, to ensure secure storage in the database.
-   - Store Data: The server stores the encrypted data, encry_aes_key, IV, and signature in the database for future use.
+1. Decrypt AES Key: The server uses its RSA private key to decrypt the encry_aes_key and retrieve the original AES key.
+2. Decrypt Data: The server uses the decrypted AES key to decrypt the ciphertext and retrieve the original data.
+3. Verify Signature: The server verifies the signature using the client’s public RSA key to ensure that the data has not been tampered with.
+4. Encrypt Data for Storage: The server may re.encrypt the data with its own AES key before storing, to ensure secure storage in the database.
+5. Store Data: The server stores the encrypted data, encry_aes_key, IV, and signature in the database for future use.
 
-2. GET Request Flow (Server → Client)
+### 2. GET Request Flow (Server → Client)
 
 Scenario: The server retrieves the encrypted data and sends it back to the client for viewing, ensuring data integrity.
 
-2.1 Server-Side:
+#### Server-Side:
 
-- Retrieve Data: The server retrieves the latest stored encrypted data, AES key, IV, and signature from the database.
-- Verify Data Integrity: The server checks the integrity of the data by verifying the signature using the client’s public RSA key.
-- Decrypt AES Key: If the data is valid, the server uses its RSA private key to decrypt the encry_aes_key and retrieve the original AES key.
-- Decrypt Data: The server uses the decrypted AES key and IV to decrypt the stored encrypted data and retrieve the original raw content (data).
-- Re-encrypt for Sending: If necessary, the server may re-encrypt the data with a new AES key and send it back to the client.
-- Send Data to Client: The server sends the re-encrypted data, encrypted AES key, IV, and signature back to the client.
+1. Retrieve Data: The server retrieves the latest stored encrypted data, AES key, IV, and signature from the database.
+2. Verify Data Integrity: The server checks the integrity of the data by verifying the signature using the client’s public RSA key.
+3. Decrypt AES Key: If the data is valid, the server uses its RSA private key to decrypt the encry_aes_key and retrieve the original AES key.
+4. Decrypt Data: The server uses the decrypted AES key and IV to decrypt the stored encrypted data and retrieve the original raw content (data).
+5. Re-encrypt for Sending: If necessary, the server may re-encrypt the data with a new AES key and send it back to the client.
+6. Send Data to Client: The server sends the re-encrypted data, encrypted AES key, IV, and signature back to the client.
 
-  2.2 Client-Side:
+#### Client-Side:
 
-- Receive Data: The client receives the encrypted data, encrypted AES key, IV, and signature from the server.
-- Decrypt AES Key: The client uses its private RSA key to decrypt the encrypted AES key.
-- Decrypt Data: Using the decrypted AES key and IV, the client decrypts the encrypted data to retrieve the original content.
-- Verify Signature: The client verifies the signature using the client’s public RSA key to ensure that the data has not been tampered with.
-- Display Data: If the signature is valid, the client displays the decrypted data to the user.
+1. Receive Data: The client receives the encrypted data, encrypted AES key, IV, and signature from the server.
+2. Decrypt AES Key: The client uses its private RSA key to decrypt the encrypted AES key.
+3. Decrypt Data: Using the decrypted AES key and IV, the client decrypts the encrypted data to retrieve the original content.
+4. Verify Signature: The client verifies the signature using the client’s public RSA key to ensure that the data has not been tampered with.
+5. Display Data: If the signature is valid, the client displays the decrypted data to the user.
